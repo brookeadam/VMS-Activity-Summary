@@ -31,19 +31,15 @@ if df is None:
 
 # --- GRAMMAR HELPER ---
 def conjugate_to_ing(text):
-    """Converts past tense verbs to gerunds (-ing) for better sentence flow."""
     words = text.split()
-    if not words:
-        return text
-    
+    if not words: return text
     replacements = {
         "hosted": "hosting", "prepped": "prepping", "created": "creating",
         "pulled": "pulling", "cleared": "clearing", "led": "leading",
         "assisted": "assisting", "removed": "removing", "monitored": "monitoring",
         "attended": "attending", "presented": "presenting", "conducted": "conducting",
-        "organized": "organizing", "taught": "teaching", "gave": "giving", "wrote": "writing"
+        "organized": "organizing", "taught": "teaching", "gave": "giving"
     }
-    
     new_words = []
     for word in words:
         clean_word = word.lower().rstrip(',.')
@@ -60,12 +56,12 @@ def conjugate_to_ing(text):
 
 # --- APP UI ---
 st.title("🌳 VMS Auto-Categorizer")
-st.caption("Auto-suggestions based on AAMN logic. You can override suggestions if needed.")
+st.caption("Now recognizes partners like San Antonio River Authority based on Organization/Location.")
 
-# 1. THE THREE INPUTS
+# 1. INPUTS
 notes = st.text_area(
     "1. Specific Task Details",
-    placeholder="e.g., Hosted a Spring Sowing class, prepped materials, and created the presentation.",
+    placeholder="e.g., Pulled weeds and cleared trails.",
     height=100
 )
 
@@ -75,52 +71,88 @@ with col1:
 with col2:
     location = st.text_input("3. Location", placeholder="e.g., Confluence Park")
 
-# --- AUTO-DECISION LOGIC ---
-def auto_decide(text):
-    if not text: return "Other", "Other – AAMN"
-    t = text.lower()
-    if any(word in t for word in ['board', 'committee', 'newsletter', 'website', 'admin', 'meeting', 'reporting hours']):
-        return "Chapter Business", "Chapter Business – AAMN"
-    if any(word in t for word in ['webinar', 'lecture', 'training', 'workshop', 'conference', 'tmn tuesday']):
-        if 'tmn tuesday' in t: return "Advanced Training", "TMN Tuesday"
-        return "Advanced Training", "Presentations"
-    if any(word in t for word in ['outreach', 'booth', 'presentation', 'public', 'students', 'tour', 'guide', 'museum', 'witte', 'class', 'taught', 'hosted']):
-        return "Public Outreach", "Public Outreach – AAMN"
-    if any(word in t for word in ['trail', 'maintenance', 'garden', 'planting', 'invasive', 'brush', 'clearing', 'park']):
-        return "Nature/Public Access", "Access Nature – AAMN"
-    if any(word in t for word in ['survey', 'monitoring', 'bird count', 'inaturalist', 'water quality', 'coco rahs']):
-        if 'inaturalist' in t: return "Field Research", "iNaturalist Observations"
-        return "Field Research", "Field Research – AAMN"
-    return "Other", "Other – AAMN"
+# --- PARTNER & ACTIVITY MATCHING LOGIC ---
+def auto_decide(task_text, org_text, loc_text):
+    if not task_text: return "Other", "Other – AAMN"
+    
+    t = task_text.lower()
+    o_l = (org_text + " " + loc_text).lower()
+    
+    # Identify Partner based on Org/Loc
+    partner = "AAMN" # Default
+    partner_map = {
+        "san antonio river": "San Antonio River Authority",
+        "sara": "San Antonio River Authority",
+        "river foundation": "San Antonio River Authority",
+        "mitchell lake": "Mitchell Lake Audubon Center",
+        "botanical garden": "San Antonio Botanical Garden",
+        "bulverde oaks": "Bulverde Oaks Nature Preserve",
+        "cibolo": "Cibolo Conservation Center",
+        "government canyon": "Government Canyon",
+        "guadalupe river": "Guadalupe River State Park",
+        "headwaters": "Headwaters-Incarnate Word",
+        "witte": "Witte Museum",
+        "phil hardberger": "San Antonio Parks and Recreation",
+        "friedrich": "San Antonio Parks and Recreation",
+        "canyon gorge": "Canyon Gorge",
+        "kendall county": "Kendall County Parks Partnership",
+        "kronkosky": "Kronkosky State Natural Area"
+    }
+    
+    for key, val in partner_map.items():
+        if key in o_l:
+            partner = val
+            break
 
-suggested_cat, suggested_sub = auto_decide(notes)
+    # Determine Base Activity
+    category = "Other"
+    base_activity = "Other"
+
+    if any(word in t for word in ['board', 'committee', 'admin', 'meeting', 'reporting hours']):
+        category, base_activity = "Chapter Business", "Chapter Business"
+    elif any(word in t for word in ['webinar', 'lecture', 'training', 'workshop', 'tmn tuesday']):
+        category = "Advanced Training"
+        base_activity = "TMN Tuesday" if "tmn tuesday" in t else "Presentations"
+        return category, base_activity # These don't follow the Partner format
+    elif any(word in t for word in ['outreach', 'booth', 'presentation', 'public', 'students', 'tour', 'guide', 'class']):
+        category, base_activity = "Public Outreach", "Public Outreach"
+    elif any(word in t for word in ['invasive', 'weed', 'privet', 'chinaberry']):
+        category, base_activity = "Resource Management", "Invasives"
+    elif any(word in t for word in ['trail', 'maintenance', 'clearing', 'trash', 'litter', 'cleanup']):
+        category = "Nature/Public Access" if "trail" in t else "Resource Management"
+        base_activity = "Access Nature" if "trail" in t else "Trash Removal"
+    elif any(word in t for word in ['survey', 'monitoring', 'bird count', 'inaturalist']):
+        category, base_activity = "Field Research", "Field Research"
+        if "inaturalist" in t: base_activity = "iNaturalist Observations"
+    elif any(word in t for word in ['planting', 'restore', 'restoration']):
+        category, base_activity = "Resource Management", "Habitat Restore"
+
+    # Construct and validate subcategory name: "Activity – Partner"
+    suggested_sub = f"{base_activity} – {partner}"
+    
+    # Check if this subcategory actually exists in the CSV
+    exists = df[df['vms_subcategory'] == suggested_sub]
+    if exists.empty:
+        # Fallback if specific partner combo doesn't exist (e.g. Outreach - Government Canyon)
+        suggested_sub = f"{base_activity} – AAMN"
+        if df[df['vms_subcategory'] == suggested_sub].empty:
+            # Final fallback to first match in category
+            suggested_sub = df[df['vms_category_name'] == category]['vms_subcategory'].iloc[0]
+
+    return category, suggested_sub
+
+suggested_cat, suggested_sub = auto_decide(notes, organization, location)
 
 # --- OVERRIDE SECTION ---
 st.divider()
 st.subheader("VMS Classification")
-st.info("Check the suggestions below. If the app guessed incorrectly, use the dropdowns to fix it.")
-
 cat_list = sorted(df['vms_category_name'].unique().tolist())
-# Find index of suggestion to set it as default
-try:
-    cat_index = cat_list.index(suggested_cat)
-except ValueError:
-    cat_index = 0
-
+cat_index = cat_list.index(suggested_cat) if suggested_cat in cat_list else 0
 selected_category = st.selectbox("Confirm VMS Category", cat_list, index=cat_index)
 
 sub_df = df[df['vms_category_name'] == selected_category]
 sub_list = sorted(sub_df['vms_subcategory'].unique().tolist())
-
-try:
-    # Only use suggested subcategory if it belongs to the selected category
-    if suggested_sub in sub_list:
-        sub_index = sub_list.index(suggested_sub)
-    else:
-        sub_index = 0
-except ValueError:
-    sub_index = 0
-
+sub_index = sub_list.index(suggested_sub) if suggested_sub in sub_list else 0
 selected_subcategory = st.selectbox("Confirm VMS Subcategory", sub_list, index=sub_index)
 
 # --- NARRATIVE GENERATOR ---
@@ -138,25 +170,20 @@ def generate_narrative(cat, sub, task, org, loc):
         return f"Representing the Master Naturalist program{loc_str}, I engaged in public outreach with {org_str} by {clean_notes}."
     if cat == "Field Research":
         return f"I contributed to citizen science and research efforts for {sub}{loc_str} by {clean_notes}."
-    if cat == "Nature/Public Access":
+    if cat == "Nature/Public Access" or "Resource Management" in cat:
         return f"I provided habitat restoration and trail maintenance service for {sub}{loc_str} with {org_str} by {clean_notes}."
 
-    return f"I provided volunteer service for {org_str} at {loc_str} by {clean_notes}."
+    return f"I provided volunteer service for {sub} in coordination with {org_str}{loc_str} by {clean_notes}."
 
 # --- OUTPUT ---
 st.divider()
 if notes:
-    # Look up rules for the FINAL selection
-    rules_lookup = df[(df['vms_category_name'] == selected_category) & 
-                      (df['vms_subcategory'] == selected_subcategory)]
-    
+    rules_lookup = df[(df['vms_category_name'] == selected_category) & (df['vms_subcategory'] == selected_subcategory)]
     if not rules_lookup.empty:
         rule = rules_lookup.iloc[0]['rules']
-        if pd.notna(rule):
-            st.warning(f"💡 **VMS Rule for this code:** {rule}")
+        if pd.notna(rule): st.warning(f"💡 **VMS Rule for this code:** {rule}")
 
     final_summary = generate_narrative(selected_category, selected_subcategory, notes, organization, location)
-    
     st.subheader("Generated Summary")
     st.text_area("Copy/Paste into VMS:", final_summary, height=120)
 else:
