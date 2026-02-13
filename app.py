@@ -19,8 +19,8 @@ def get_data():
     target_file = 'VMS_Code_Reference_FULL_100pct.csv'
     df = find_and_load_csv(target_file)
     if df is not None:
-        # Pre-process keywords for better matching
-        df['keyword_list'] = df['keywords'].fillna('').str.lower().split(',')
+        # Fixed the AttributeError by adding .str before .split
+        df['keyword_list'] = df['keywords'].fillna('').str.lower().str.split(',')
         return df
     return None
 
@@ -54,7 +54,7 @@ def auto_decide(text):
     
     t = text.lower()
     
-    # Priority 1: Chapter Business (Administrative)
+    # Priority 1: Chapter Business
     if any(word in t for word in ['board', 'committee', 'newsletter', 'website', 'admin', 'meeting', 'reporting hours']):
         return "Chapter Business", "Chapter Business – AAMN"
     
@@ -76,10 +76,8 @@ def auto_decide(text):
         if 'inaturalist' in t: return "Field Research", "iNaturalist Observations"
         return "Field Research", "Field Research – AAMN"
 
-    # Default if no clear match
     return "Other", "Other – AAMN"
 
-# Perform the auto-selection
 suggested_cat, suggested_sub = auto_decide(notes)
 
 # --- GENERATE SUMMARY ---
@@ -95,13 +93,10 @@ def generate_narrative(cat, sub, task, org, loc):
     
     if cat == "Advanced Training":
         return f"I attended an advanced training session regarding {sub} provided by {org_str}{loc_str}. The session focused on {clean_notes}."
-    
     if cat == "Public Outreach":
         return f"Representing the Master Naturalist program{loc_str}, I engaged in public outreach with {org_str} by {clean_notes}."
-    
     if cat == "Field Research":
         return f"I contributed to citizen science and research efforts for {sub}{loc_str}. My activities involved {clean_notes}."
-
     if cat == "Nature/Public Access":
         return f"I provided habitat restoration and trail maintenance service for {sub}{loc_str} with {org_str}. My work included {clean_notes}."
 
@@ -111,13 +106,11 @@ def generate_narrative(cat, sub, task, org, loc):
 st.divider()
 
 if notes:
-    # Display what the app chose
     st.subheader("VMS Classification Results")
     res_col1, res_col2 = st.columns(2)
     res_col1.metric("Category", suggested_cat)
     res_col2.metric("Subcategory", suggested_sub)
     
-    # Look up rules from CSV
     rules_lookup = df[(df['vms_category_name'] == suggested_cat) & 
                       (df['vms_subcategory'] == suggested_sub)]
     
@@ -126,12 +119,9 @@ if notes:
         if pd.notna(rule):
             st.info(f"💡 **VMS Rule:** {rule}")
 
-    # Generate and show the summary
     final_summary = generate_narrative(suggested_cat, suggested_sub, notes, organization, location)
     
     st.subheader("Generated Summary")
     st.text_area("Copy/Paste into VMS:", final_summary, height=120)
-    
-    st.caption("⚠️ If the category is wrong, try adding more specific keywords (e.g., 'survey', 'meeting', 'trail').")
 else:
     st.info("Start typing your task details above to see the VMS suggestion.")
