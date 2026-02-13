@@ -19,7 +19,7 @@ def get_data():
     target_file = 'VMS_Code_Reference_FULL_100pct.csv'
     df = find_and_load_csv(target_file)
     if df is not None:
-        # Fixed the AttributeError by adding .str before .split
+        # Pre-process keywords for better matching
         df['keyword_list'] = df['keywords'].fillna('').str.lower().str.split(',')
         return df
     return None
@@ -30,22 +30,66 @@ if df is None:
     st.error("⚠️ CSV File Not Found! Please ensure 'VMS_Code_Reference_FULL_100pct.csv' is in your GitHub repository.")
     st.stop()
 
+# --- GRAMMAR HELPER ---
+def conjugate_to_ing(text):
+    """Converts past tense verbs to gerunds (-ing) for better sentence flow."""
+    words = text.split()
+    if not words:
+        return text
+    
+    replacements = {
+        "hosted": "hosting",
+        "prepped": "prepping",
+        "created": "creating",
+        "pulled": "pulling",
+        "cleared": "clearing",
+        "led": "leading",
+        "assisted": "assisting",
+        "removed": "removing",
+        "monitored": "monitoring",
+        "attended": "attending",
+        "presented": "presenting",
+        "conducted": "conducting",
+        "organized": "organizing",
+        "taught": "teaching",
+        "gave": "giving"
+    }
+    
+    new_words = []
+    for word in words:
+        # Strip punctuation for the dictionary check
+        clean_word = word.lower().rstrip(',.')
+        punctuation = word[len(clean_word):]
+        
+        if clean_word in replacements:
+            new_words.append(replacements[clean_word] + punctuation)
+        elif clean_word.endswith('ed') and len(clean_word) > 4:
+            # Simple heuristic for most -ed verbs
+            stem = clean_word[:-2]
+            if stem.endswith('e'): # e.g., 'created' -> 'creat' -> 'creating'
+                stem = stem[:-1]
+            new_words.append(stem + "ing" + punctuation)
+        else:
+            new_words.append(word)
+            
+    return " ".join(new_words)
+
 # --- APP UI ---
 st.title("🌳 VMS Auto-Categorizer")
-st.caption("Enter your details and let the app handle the VMS coding and summary.")
+st.caption("Enter your details and let the app handle the VMS coding and summary grammar.")
 
 # 1. THE THREE INPUTS
 notes = st.text_area(
     "1. Specific Task Details",
-    placeholder="e.g., I pulled invasive chinaberry trees and privet near the trailhead.",
+    placeholder="e.g., Hosted a Spring Sowing class, prepped materials, and created the presentation.",
     height=100
 )
 
 col1, col2 = st.columns(2)
 with col1:
-    organization = st.text_input("2. Organization / Chapter", placeholder="e.g., Alamo Area Master Naturalist Chapter")
+    organization = st.text_input("2. Organization / Chapter", placeholder="e.g., San Antonio River Foundation")
 with col2:
-    location = st.text_input("3. Location", placeholder="e.g., Phil Hardberger Park")
+    location = st.text_input("3. Location", placeholder="e.g., Confluence Park")
 
 # --- AUTO-DECISION LOGIC ---
 def auto_decide(text):
@@ -64,7 +108,7 @@ def auto_decide(text):
         return "Advanced Training", "Presentations"
     
     # Priority 3: Public Outreach
-    if any(word in t for word in ['outreach', 'booth', 'presentation', 'public', 'students', 'tour', 'guide', 'museum', 'witte']):
+    if any(word in t for word in ['outreach', 'booth', 'presentation', 'public', 'students', 'tour', 'guide', 'museum', 'witte', 'class', 'taught', 'hosted']):
         return "Public Outreach", "Public Outreach – AAMN"
     
     # Priority 4: Nature Access / Restoration
@@ -80,27 +124,33 @@ def auto_decide(text):
 
 suggested_cat, suggested_sub = auto_decide(notes)
 
-# --- GENERATE SUMMARY ---
+# --- NARRATIVE GENERATOR ---
 def generate_narrative(cat, sub, task, org, loc):
     if not task: return ""
     
-    clean_notes = task.strip().rstrip('.')
-    if clean_notes and not clean_notes[:3].isupper():
+    # Use the grammar helper to fix the tense
+    clean_notes = conjugate_to_ing(task.strip().rstrip('.'))
+    
+    # Set starting case correctly
+    if clean_notes and not clean_notes[:2].isupper():
         clean_notes = clean_notes[0].lower() + clean_notes[1:]
 
     org_str = org if org else "the AAMN chapter"
     loc_str = f" at {loc}" if loc else ""
     
     if cat == "Advanced Training":
-        return f"I attended an advanced training session regarding {sub} provided by {org_str}{loc_str}. The session focused on {clean_notes}."
+        return f"I attended an advanced training session regarding {sub} provided by {org_str}{loc_str}. The session involved {clean_notes}."
+    
     if cat == "Public Outreach":
         return f"Representing the Master Naturalist program{loc_str}, I engaged in public outreach with {org_str} by {clean_notes}."
+    
     if cat == "Field Research":
-        return f"I contributed to citizen science and research efforts for {sub}{loc_str}. My activities involved {clean_notes}."
-    if cat == "Nature/Public Access":
-        return f"I provided habitat restoration and trail maintenance service for {sub}{loc_str} with {org_str}. My work included {clean_notes}."
+        return f"I contributed to citizen science and research efforts for {sub}{loc_str} by {clean_notes}."
 
-    return f"I provided volunteer service for {sub} in coordination with {org_str}{loc_str}. My specific tasks included {clean_notes}."
+    if cat == "Nature/Public Access":
+        return f"I provided habitat restoration and trail maintenance service for {sub}{loc_str} with {org_str} by {clean_notes}."
+
+    return f"I provided volunteer service for {sub} in coordination with {org_str}{loc_str} by {clean_notes}."
 
 # --- DISPLAY RESULTS ---
 st.divider()
@@ -123,5 +173,6 @@ if notes:
     
     st.subheader("Generated Summary")
     st.text_area("Copy/Paste into VMS:", final_summary, height=120)
+    st.caption("Grammar check: Verbs have been automatically adjusted to gerunds (e.g., 'hosted' to 'hosting') for a smoother summary.")
 else:
     st.info("Start typing your task details above to see the VMS suggestion.")
