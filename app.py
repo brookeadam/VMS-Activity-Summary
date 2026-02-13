@@ -1,119 +1,107 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
 
 # Set page config
-st.set_page_config(page_title="VMS Activity Summary Generator", layout="centered", page_icon="🌿")
+st.set_page_config(page_title="Alamo VMS Helper", layout="centered", page_icon="🌳")
 
-# Load reference data from the attached CSV
 @st.cache_data
 def load_data():
-    try:
-        df = pd.read_csv('VMS_Code_Reference_FULL_100pct.csv')
-        return df
-    except FileNotFoundError:
-        st.error("CSV file 'VMS_Code_Reference_FULL_100pct.csv' not found. Please ensure it is in the same directory.")
-        return pd.DataFrame()
+    df = pd.read_csv('VMS_Code_Reference_FULL_100pct.csv')
+    df['keyword_list'] = df['keywords'].fillna('').str.lower().str.split(',')
+    return df
 
 df = load_data()
 
-st.title("🌿 VMS Activity Summary Generator")
-st.caption("Automatically create a VMS-ready summary blurb using approved categories.")
+st.title("🌳 Alamo VMS Decision Assistant")
+st.caption("Categorization based on the AAMN Decision Tree logic.")
 
-if not df.empty:
-    # ---- INPUT FIELDS ----
+# ---- STEP 1: INPUT DESCRIPTION ----
+notes = st.text_area(
+    "Specific Task Details (What did you do?)",
+    placeholder="e.g., I led a guided nature hike for 15 middle school students at the park.",
+    height=100
+)
 
-    # 1. Category Selection (from CSV)
+# ---- STEP 2: DECISION TREE LOGIC ----
+def predict_category(text):
+    t = text.lower()
+    
+    # 1. Chapter Business (Administrative)
+    if any(word in t for word in ['board', 'committee', 'newsletter', 'website', 'admin', 'meeting']):
+        return "Chapter Business", "Chapter Business – AAMN"
+    
+    # 2. Advanced Training (Learning)
+    if any(word in t for word in ['webinar', 'lecture', 'training', 'workshop', 'conference']):
+        if 'tmn tuesday' in t: return "Advanced Training", "TMN Tuesday"
+        return "Advanced Training", "Presentations"
+    
+    # 3. Public Outreach (Teaching/Interaction)
+    if any(word in t for word in ['outreach', 'booth', 'presentation', 'public', 'students', 'tour', 'guide']):
+        return "Public Outreach", "Public Outreach – AAMN"
+    
+    # 4. Direct Service / Nature Access (Physical work/Research)
+    if any(word in t for word in ['trail', 'maintenance', 'garden', 'planting', 'invasive']):
+        return "Nature/Public Access", "Access Nature – AAMN"
+    
+    if any(word in t for word in ['survey', 'monitoring', 'bird count', 'inaturalist']):
+        return "Field Research", "Field Research – AAMN"
+
+    return None, None
+
+suggested_cat, suggested_sub = predict_category(notes)
+
+# ---- STEP 3: DYNAMIC DROPDOWNS ----
+st.divider()
+col1, col2 = st.columns(2)
+
+with col1:
     categories = sorted(df['vms_category_name'].unique())
-    selected_category = st.selectbox("Select VMS Category", categories)
+    cat_idx = categories.index(suggested_cat) if suggested_cat in categories else 0
+    selected_category = st.selectbox("VMS Category", categories, index=cat_idx)
 
-    # 2. Subcategory Selection (Filtered by Category)
-    sub_df = df[df['vms_category_name'] == selected_category]
-    subcategories = sorted(sub_df['vms_subcategory'].unique())
-    selected_subcategory = st.selectbox("Select Specific Activity (VMS Subcategory)", subcategories)
+with col2:
+    sub_df = df[df['vms_category_name'] == selected_category].reset_index()
+    sub_list = sub_df['vms_subcategory'].tolist()
+    sub_idx = sub_list.index(suggested_sub) if suggested_sub in sub_list else 0
+    selected_subcategory = st.selectbox("VMS Subcategory", sub_list, index=sub_idx)
 
-    # Get details for the selected subcategory to use in the summary logic
-    row = sub_df[sub_df['vms_subcategory'] == selected_subcategory].iloc[0]
-    vms_activity_type = row['activity_type']
-    vms_rules = row['rules']
+# Get rules for current selection
+current_row = sub_df[sub_df['vms_subcategory'] == selected_subcategory].iloc[0]
 
-    # 3. Display VMS Rules & Requirements
-    if pd.notna(vms_rules) and vms_rules.strip() != "":
-        with st.expander("📌 VMS Rules for this activity", expanded=True):
-            st.info(vms_rules)
+# ---- STEP 4: CONTEXT ----
+organization = st.text_input("Organization / Chapter", placeholder="e.g., Alamo Area Master Naturalist Chapter")
+location = st.text_input("Location", placeholder="e.g., Phil Hardberger Park")
 
-    # 4. Manual Context Inputs
-    col1, col2 = st.columns(2)
-    with col1:
-        organization = st.text_input("Organization / Chapter", value="Alamo Area Master Naturalists")
-        activity_date = st.date_input("Date of Activity", value=date.today())
-    with col2:
-        location = st.text_input("Location", placeholder="e.g., Phil Hardberger Park")
-        hours = st.number_input("Hours Spent", min_value=0.25, step=0.25)
+# ---- STEP 5: NARRATIVE GENERATOR ----
+def generate_narrative():
+    if not notes: return ""
+    
+    clean_notes = notes.strip().rstrip('.')
+    # Ensure lowercase start for mid-sentence flow
+    if clean_notes and not clean_notes[:3].isupper():
+        clean_notes = clean_notes[0].lower() + clean_notes[1:]
 
-    notes = st.text_area(
-        "Specific Task Details (what you did)",
-        placeholder="Pulled invasive Chinaberry, cleared trails, led a tour for 10 people, etc."
-    )
+    org = organization if organization else "the AAMN chapter"
+    loc = f" at {location}" if location else ""
+    
+    # Narrative templates based on Decision Tree paths
+    if selected_category == "Advanced Training":
+        return f"I attended an advanced training session regarding {selected_subcategory} provided by {org}{loc}. The focus of the session was {clean_notes}."
+    
+    if selected_category == "Public Outreach":
+        return f"Representing the Master Naturalist program {loc}, I engaged in public outreach with {org} by {clean_notes}."
+    
+    if selected_category == "Field Research":
+        return f"I contributed to citizen science and research efforts for {selected_subcategory} {loc}. My activities involved {clean_notes}."
 
-    # ---- SUMMARY GENERATION ----
+    return f"I provided volunteer service for {selected_subcategory} in coordination with {org}{loc}. My specific tasks included {clean_notes}."
 
-    def generate_summary():
-        # Base start
-        summary_start = f"On {activity_date.strftime('%B %d, %Y')}, I "
-        
-        # Verb mapping based on activity_type column in CSV
-        mapping = {
-            'training': "participated in an advanced training focused on",
-            'administration': "contributed to chapter business activities including",
-            'field_research': "assisted with research and monitoring activities related to",
-            'habitat restoration': "volunteered on a habitat restoration activity involving",
-            'invasive removal': "assisted with invasive species removal during",
-            'cleanup': "participated in a cleanup activity during",
-            'maintenance': "performed maintenance tasks during",
-            'construction': "assisted with construction or infrastructure work for",
-            'outreach': "supported public outreach efforts through",
-            'education': "provided environmental education through",
-            'consultation': "provided technical guidance for",
-            'other': "completed volunteer work involving"
-        }
-        
-        verb = mapping.get(vms_activity_type, "completed work related to")
-        
-        # Sentence construction
-        main_sentence = f"{verb} {selected_subcategory}."
-        
-        # Context
-        details = f" This activity was conducted with {organization}"
-        if location:
-            details += f" at {location}"
-        details += "."
-        
-        # Impact / Notes
-        impact = ""
-        if notes:
-            impact = f" Key tasks included: {notes.rstrip('.')}."
-            
-        # Time
-        time_log = f" A total of {hours} hours were logged."
-        
-        return summary_start + main_sentence + details + impact + time_log
-
-    # ---- OUTPUT ----
-
-    if st.button("✨ Generate Summary"):
-        summary = generate_summary()
-        
-        st.subheader("Generated Summary")
-        # Text area for easy copying
-        st.text_area("Copy & paste into VMS:", summary, height=180)
-        
-        # Download option
-        st.download_button(
-            label="📄 Download as Text File",
-            data=summary,
-            file_name=f"VMS_Summary_{activity_date}.txt",
-            mime="text/plain"
-        )
+if st.button("✨ Generate VMS Summary"):
+    summary = generate_narrative()
+    st.subheader("VMS Ready Summary")
+    st.text_area("Copy/Paste into VMS:", summary, height=120)
+    
+    if pd.notna(current_row['rules']):
+        st.info(f"💡 **VMS Rule:** {current_row['rules']}")
 else:
     st.warning("Please upload or provide the CSV file to enable categorization.")
