@@ -16,7 +16,7 @@ df = load_data()
 # You will need to add your API Key to Streamlit's settings
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.0-flash')
 else:
     st.warning("⚠️ AI Features disabled. Add GEMINI_API_KEY to your Streamlit Secrets to enable.")
 
