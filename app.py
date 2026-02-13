@@ -41,7 +41,7 @@ def conjugate_to_ing(text):
         "pulled": "pulling", "cleared": "clearing", "led": "leading",
         "assisted": "assisting", "removed": "removing", "monitored": "monitoring",
         "attended": "attending", "presented": "presenting", "conducted": "conducting",
-        "organized": "organizing", "taught": "teaching", "gave": "giving"
+        "organized": "organizing", "taught": "teaching", "gave": "giving", "wrote": "writing"
     }
     
     new_words = []
@@ -141,7 +141,7 @@ def generate_narrative(cat, sub, task, org, loc):
     if cat == "Nature/Public Access":
         return f"I provided habitat restoration and trail maintenance service for {sub}{loc_str} with {org_str} by {clean_notes}."
 
-    return f"I provided volunteer service for {sub} in coordination with {org_str}{loc_str} by {clean_notes}."
+    return f"I provided volunteer service for {org_str} at {loc_str} by {clean_notes}."
 
 # --- OUTPUT ---
 st.divider()
